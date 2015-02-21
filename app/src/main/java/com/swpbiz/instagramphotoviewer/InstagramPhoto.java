@@ -1,10 +1,13 @@
 package com.swpbiz.instagramphotoviewer;
 
+import java.util.Date;
+
 public class InstagramPhoto {
     public String username;
     public String profilePictureUrl;
     public String caption;
     public String imageUrl;
-    public int imageHeight;
-    public int likesCount;
+    public String likesCount;
+    public String timeSpan;
+
 }
