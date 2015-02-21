@@ -1,7 +1,15 @@
 package com.swpbiz.instagramphotoviewer;
 
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
+import android.app.DialogFragment;
+import android.app.FragmentManager;
+import android.app.FragmentTransaction;
 import android.content.Context;
-import android.graphics.Color;
+import android.content.DialogInterface;
+import android.os.Bundle;
+import android.text.Html;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -9,15 +17,25 @@ import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import com.loopj.android.http.AsyncHttpClient;
+import com.loopj.android.http.JsonHttpResponseHandler;
 import com.makeramen.RoundedTransformationBuilder;
 import com.squareup.picasso.Picasso;
 import com.squareup.picasso.Transformation;
 
-import org.w3c.dom.Text;
+import org.apache.http.Header;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
+import java.util.ArrayList;
+
+import java.util.Collections;
 import java.util.List;
 
-public class InstagramPhotosAdapter extends ArrayAdapter<InstagramPhoto> {
+public class InstagramPhotosAdapter extends ArrayAdapter<InstagramPhoto> implements View.OnClickListener {
+
+    // TODO:  still need more work to handle ViewHolderItem properly.
+    ViewHolderItem holder;
 
     public InstagramPhotosAdapter(Context context, List<InstagramPhoto> objects) {
         super(context, android.R.layout.simple_list_item_1, objects);
@@ -25,34 +43,165 @@ public class InstagramPhotosAdapter extends ArrayAdapter<InstagramPhoto> {
 
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
-        InstagramPhoto photo = getItem(position);
 
         if (convertView == null) {
             convertView = LayoutInflater.from(getContext()).inflate(R.layout.item_photo, parent, false);
+
+            holder = new ViewHolderItem();
+
+            holder.ivProfilePicture = (ImageView) convertView.findViewById(R.id.ivProfilePhoto);
+            holder.tvUsername = (TextView) convertView.findViewById(R.id.tvUsername);
+            holder.tvTimespan = (TextView) convertView.findViewById(R.id.tvTimespan);
+            holder.ivPhoto = (ImageView) convertView.findViewById(R.id.ivPhoto);
+            holder.tvLikes = (TextView) convertView.findViewById(R.id.tvLikes);
+            holder.tvCaption = (TextView) convertView.findViewById(R.id.tvCaption);
+
+            holder.tvViewAllComments = (TextView) convertView.findViewById(R.id.tvViewAllComments);
+            holder.tvViewAllComments.setOnClickListener(this);
+
+            holder.tvLatestComment = (TextView) convertView.findViewById(R.id.tvLastestComment);
+            holder.tvSecondLatestComment = (TextView) convertView.findViewById(R.id.tvSecondLastestComment);
+            holder.position = position;
+
+        } else {
+            holder = (ViewHolderItem) convertView.getTag();
         }
 
-        ImageView ivProfilePicture = (ImageView) convertView.findViewById(R.id.ivProfilePhoto);
-        TextView tvUsername = (TextView) convertView.findViewById(R.id.tvUsername);
-        TextView tvTimespan = (TextView) convertView.findViewById(R.id.tvTimespan);
-        ImageView ivPhoto = (ImageView) convertView.findViewById(R.id.ivPhoto);
-        TextView tvLikes = (TextView) convertView.findViewById(R.id.tvLikes);
-        TextView tvCaption = (TextView) convertView.findViewById(R.id.tvCaption);
+        InstagramPhoto photo = getItem(position);
 
-        tvUsername.setText(photo.username);
-        tvTimespan.setText(photo.timeSpan);
-        tvCaption.setText(photo.caption);
-        tvLikes.setText(photo.likesCount);
+        if (photo != null) {
 
-        // download image with Picasso
-        ivProfilePicture.setImageResource(0);
-        Transformation transformation = new RoundedTransformationBuilder()
-                .oval(true)
-                .build();
-        Picasso.with(getContext()).load(photo.profilePictureUrl).placeholder(R.drawable.abc_ab_share_pack_holo_light).transform(transformation).into(ivProfilePicture);
+            holder.mediaId = photo.mediaId;
 
-        ivPhoto.setImageResource(0);
-        Picasso.with(getContext()).load(photo.imageUrl).fit().centerCrop().placeholder(R.drawable.abc_ab_share_pack_holo_light).into(ivPhoto);
+            holder.ivProfilePicture.setImageResource(0);
+            Transformation transformation = new RoundedTransformationBuilder()
+                    .oval(true)
+                    .build();
+            Picasso.with(getContext()).load(photo.profilePictureUrl).placeholder(R.drawable.abc_ab_share_pack_holo_light).transform(transformation).into(holder.ivProfilePicture);
 
+            holder.tvUsername.setText(photo.username);
+
+            holder.tvTimespan.setText(photo.timeSpan);
+
+            holder.ivPhoto.setImageResource(0);
+            Picasso.with(getContext()).load(photo.imageUrl).fit().centerCrop().placeholder(R.drawable.abc_ab_share_pack_holo_light).into(holder.ivPhoto);
+
+            holder.tvLikes.setText(photo.likesCount);
+
+            holder.tvCaption.setText(photo.caption);
+
+            if (photo.comments.size() > 2) {
+                holder.tvViewAllComments.setVisibility(View.VISIBLE);
+                holder.tvViewAllComments.setText("view all " + photo.allCommentsCount + " comments...");
+            }
+
+            if (photo.comments.size() >= 2) {
+                holder.tvSecondLatestComment.setVisibility(View.VISIBLE);
+                Comment comment = photo.comments.get(1);
+                holder.tvSecondLatestComment.setText(Html.fromHtml("<font color='005566'>" + comment.username + "</font> " + comment.text));
+            }
+
+            if (photo.comments.size() >= 1) {
+                holder.tvLatestComment.setVisibility(View.VISIBLE);
+                Comment comment = photo.comments.get(0);
+                holder.tvLatestComment.setText(Html.fromHtml("<font color='005566'>" + comment.username + "</font> " + comment.text));
+            }
+
+        }
+
+        convertView.setTag(holder);
         return convertView;
+    }
+
+    @Override
+    public void onClick(View v) {
+        fetchAllCommentsForMediaId(holder.mediaId);
+    }
+
+    static class ViewHolderItem {
+        ImageView ivProfilePicture;
+        TextView tvUsername;
+        TextView tvTimespan;
+        ImageView ivPhoto;
+        TextView tvLikes;
+        TextView tvCaption;
+        TextView tvViewAllComments;
+        TextView tvLatestComment;
+        TextView tvSecondLatestComment;
+        String mediaId;
+        int position;
+    }
+
+    private void fetchAllCommentsForMediaId(String mediaId) {
+        String url = "https://api.instagram.com/v1/media/" + mediaId + "/comments?client_id=" + MainActivity.CLIENT_ID;
+        AsyncHttpClient client = new AsyncHttpClient();
+        client.get(url, null, new MediaCommentsJsonHttpResponseHandler());
+    }
+
+    private class MediaCommentsJsonHttpResponseHandler extends JsonHttpResponseHandler {
+        @Override
+        public void onSuccess(int statusCode, Header[] headers, JSONObject response) {
+            List<Comment> comments = new ArrayList<Comment>();
+            JSONArray commentsJSON = response.optJSONArray("data");
+            if (commentsJSON != null) {
+                for (int i = 0; i < commentsJSON.length(); i++) {
+                    JSONObject commentJSON = commentsJSON.optJSONObject(i);
+                    if (commentJSON != null) {
+                        Comment comment = new Comment();
+                        comment.timestamp = Long.valueOf(commentJSON.optString("created_time"));
+                        comment.text = commentJSON.optString("text");
+
+                        JSONObject fromJSON = commentJSON.optJSONObject("from");
+                        if (fromJSON != null) {
+                            comment.username = fromJSON.optString("username");
+                        } else {
+                            comment.username = "anonymous";
+                        }
+                        comments.add(comment);
+                    }
+                }
+            }
+
+            Collections.sort(comments, new CommentComparator());
+
+            CommentsDialogFragment dialogFragment = new CommentsDialogFragment(holder.tvUsername.getText().toString(), comments);
+
+            FragmentManager fragmentManager = ((Activity) getContext()).getFragmentManager();
+            FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
+            CommentsDialogFragment previousDialogFragment = (CommentsDialogFragment) fragmentManager.findFragmentByTag("dialog");
+            if (previousDialogFragment != null) {
+                fragmentTransaction.remove(previousDialogFragment);
+            }
+
+            dialogFragment.show(fragmentTransaction, "dialog");
+
+        }
+
+        @Override
+        public void onFailure(int statusCode, Header[] headers, String responseString, Throwable throwable) {
+            super.onFailure(statusCode, headers, responseString, throwable);
+        }
+    }
+
+    public static class CommentsDialogFragment extends DialogFragment {
+
+        String username;
+        List<Comment> comments;
+
+        public CommentsDialogFragment (String username, List<Comment> comments) {
+            this.comments = comments;
+        }
+
+        @Override
+        public Dialog onCreateDialog(Bundle savedInstanceState) {
+            return new AlertDialog.Builder(getActivity())
+                    .setTitle("All Comments for "+ username)
+                    .setAdapter(new CommentsArrayAdapter(getActivity(), 0, comments), new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                        }
+                    })
+                    .show();
+        }
     }
 }
