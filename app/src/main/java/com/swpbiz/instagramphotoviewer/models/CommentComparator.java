@@ -1,4 +1,4 @@
-package com.swpbiz.instagramphotoviewer;
+package com.swpbiz.instagramphotoviewer.models;
 
 public class CommentComparator implements java.util.Comparator<Comment> {
 

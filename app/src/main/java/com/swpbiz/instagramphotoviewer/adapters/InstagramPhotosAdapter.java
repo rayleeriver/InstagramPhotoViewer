@@ -1,4 +1,4 @@
-package com.swpbiz.instagramphotoviewer;
+package com.swpbiz.instagramphotoviewer.adapters;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -13,6 +13,7 @@ import android.text.Html;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -22,6 +23,11 @@ import com.loopj.android.http.JsonHttpResponseHandler;
 import com.makeramen.RoundedTransformationBuilder;
 import com.squareup.picasso.Picasso;
 import com.squareup.picasso.Transformation;
+import com.swpbiz.instagramphotoviewer.R;
+import com.swpbiz.instagramphotoviewer.activities.MainActivity;
+import com.swpbiz.instagramphotoviewer.models.Comment;
+import com.swpbiz.instagramphotoviewer.models.CommentComparator;
+import com.swpbiz.instagramphotoviewer.models.InstagramPhoto;
 
 import org.apache.http.Header;
 import org.json.JSONArray;
@@ -32,7 +38,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class InstagramPhotosAdapter extends ArrayAdapter<InstagramPhoto> implements View.OnClickListener {
+public class InstagramPhotosAdapter extends ArrayAdapter<InstagramPhoto> implements AdapterView.OnItemClickListener {
 
     // TODO:  still need more work to handle ViewHolderItem properly.
     ViewHolderItem holder;
@@ -55,10 +61,7 @@ public class InstagramPhotosAdapter extends ArrayAdapter<InstagramPhoto> impleme
             holder.ivPhoto = (ImageView) convertView.findViewById(R.id.ivPhoto);
             holder.tvLikes = (TextView) convertView.findViewById(R.id.tvLikes);
             holder.tvCaption = (TextView) convertView.findViewById(R.id.tvCaption);
-
             holder.tvViewAllComments = (TextView) convertView.findViewById(R.id.tvViewAllComments);
-            holder.tvViewAllComments.setOnClickListener(this);
-
             holder.tvLatestComment = (TextView) convertView.findViewById(R.id.tvLastestComment);
             holder.tvSecondLatestComment = (TextView) convertView.findViewById(R.id.tvSecondLastestComment);
             holder.position = position;
@@ -114,8 +117,8 @@ public class InstagramPhotosAdapter extends ArrayAdapter<InstagramPhoto> impleme
     }
 
     @Override
-    public void onClick(View v) {
-        fetchAllCommentsForMediaId(holder.mediaId);
+    public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+        fetchAllCommentsForMediaId(getItem(position));
     }
 
     static class ViewHolderItem {
@@ -132,13 +135,19 @@ public class InstagramPhotosAdapter extends ArrayAdapter<InstagramPhoto> impleme
         int position;
     }
 
-    private void fetchAllCommentsForMediaId(String mediaId) {
-        String url = "https://api.instagram.com/v1/media/" + mediaId + "/comments?client_id=" + MainActivity.CLIENT_ID;
+    private void fetchAllCommentsForMediaId(InstagramPhoto instagramPhoto) {
+        String url = "https://api.instagram.com/v1/media/" + instagramPhoto.mediaId + "/comments?client_id=" + MainActivity.CLIENT_ID;
         AsyncHttpClient client = new AsyncHttpClient();
-        client.get(url, null, new MediaCommentsJsonHttpResponseHandler());
+        client.get(url, null, new MediaCommentsJsonHttpResponseHandler(instagramPhoto));
     }
 
     private class MediaCommentsJsonHttpResponseHandler extends JsonHttpResponseHandler {
+        InstagramPhoto instagramPhoto;
+
+        public MediaCommentsJsonHttpResponseHandler(InstagramPhoto instagramPhoto) {
+            this.instagramPhoto = instagramPhoto;
+        }
+
         @Override
         public void onSuccess(int statusCode, Header[] headers, JSONObject response) {
             List<Comment> comments = new ArrayList<Comment>();
@@ -164,7 +173,11 @@ public class InstagramPhotosAdapter extends ArrayAdapter<InstagramPhoto> impleme
 
             Collections.sort(comments, new CommentComparator());
 
-            CommentsDialogFragment dialogFragment = new CommentsDialogFragment(holder.tvUsername.getText().toString(), comments);
+            Bundle args = new Bundle();
+            args.putParcelable("instagramPhoto", instagramPhoto);
+            args.putParcelableArrayList("comments", (ArrayList<Comment>) comments);
+            CommentsDialogFragment dialogFragment = new CommentsDialogFragment();
+            dialogFragment.setArguments(args);
 
             FragmentManager fragmentManager = ((Activity) getContext()).getFragmentManager();
             FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
@@ -185,17 +198,16 @@ public class InstagramPhotosAdapter extends ArrayAdapter<InstagramPhoto> impleme
 
     public static class CommentsDialogFragment extends DialogFragment {
 
-        String username;
-        List<Comment> comments;
-
-        public CommentsDialogFragment (String username, List<Comment> comments) {
-            this.comments = comments;
+        public CommentsDialogFragment() {
         }
 
         @Override
         public Dialog onCreateDialog(Bundle savedInstanceState) {
+            Bundle args = getArguments();
+            ArrayList<Comment> comments = args.getParcelableArrayList("comments");
+            InstagramPhoto instagramPhoto = args.getParcelable("instagramPhoto");
             return new AlertDialog.Builder(getActivity())
-                    .setTitle("All Comments for "+ username)
+                    .setTitle("All Comments for "+ instagramPhoto.username)
                     .setAdapter(new CommentsArrayAdapter(getActivity(), 0, comments), new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
